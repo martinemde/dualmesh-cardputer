@@ -168,21 +168,28 @@ Every pin number and board macro above was pulled from actual upstream source (n
 partition table's arithmetic was checked programmatically, and — as of 2026-08-30 — **all four
 patch files were re-verified by applying them with `git apply` against fresh, live clones of the
 real `meshtastic/firmware` and `ripplebiz/MeshCore` `main` branches; all four applied cleanly with
-no fuzz or offset warnings.** The launcher project has also been fully compiled successfully in a
-network-unrestricted environment. What has **not** been done from this side: a full compile of
-the Meshtastic and MeshCore environments specifically (the sandbox this project was developed in
-blocks network access to platformio.org's and Espressif's package registries, which those two
-environments' managed dependencies need), and nothing has touched real hardware.
+no fuzz or offset warnings.**
 
-The GitHub Actions workflow above (`.github/workflows/build.yml`) closes that gap — running it
-gives you a real compile of all three environments on a machine with normal network access,
-which is the verification step this project couldn't complete in its own development sandbox.
-Once you have a build: watch the Actions log for any compiler errors (upstream drift since
-2026-08-30 is the most likely failure mode — a patch hunk that no longer applies cleanly fails
-the workflow with a clear error naming which file and patch; the fix is usually just re-locating
-the one or two lines each patch adds, using the "if this hunk fails" notes inside each patch
-file), and test the launcher's boot-menu and the return-to-launcher hold-to-exit gesture on real
-hardware before relying on it day to day.
+**All three environments have since been fully compiled successfully via the GitHub Actions
+workflow above, on a real, unrestricted-network runner:** launcher, Meshtastic
+(`m5stack-cardputer-adv-dualmesh`), and MeshCore (`cardputer_adv_companion_radio_ble`) all reach a
+clean link with real memory-usage tables. Along the way two real bugs were found and fixed by
+that first full run: MeshCore needed `Preferences` added to `lib_deps` explicitly (its
+`examples/companion_radio/main.cpp` sits outside `src_dir`, so PlatformIO's Library Dependency
+Finder doesn't auto-detect that framework header the way it does for Meshtastic's `src/main.cpp`),
+and this workflow's own Verify/Merge steps were hardcoded to a plain `firmware.bin` path for
+Meshtastic that doesn't actually exist — Meshtastic's own `platformio-custom.py` build script
+renames its output to `firmware-<env>-<version>.<git-hash>.bin`, a name that changes on every
+meshtastic/firmware commit. Both are now fixed (see the workflow file and `flash_all.sh`, which
+both now locate that file dynamically instead of assuming a fixed name). What has **not** been
+done from this side: nothing has touched real hardware yet.
+
+Watch the Actions log for any compiler errors (upstream drift is the most likely remaining
+failure mode — a patch hunk that no longer applies cleanly fails the workflow with a clear error
+naming which file and patch; the fix is usually just re-locating the one or two lines each patch
+adds, using the "if this hunk fails" notes inside each patch file), and test the launcher's
+boot-menu and the return-to-launcher hold-to-exit gesture on real hardware before relying on it
+day to day.
 
 ## Using it
 

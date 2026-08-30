@@ -66,13 +66,35 @@ log "Building Meshtastic (env $MESHTASTIC_ENV)..."
 ( cd "$MESHTASTIC_DIR" && python3 -m platformio run -e "$MESHTASTIC_ENV" )
 MESHTASTIC_BUILD="$MESHTASTIC_DIR/.pio/build/$MESHTASTIC_ENV"
 
+# Meshtastic's own platformio-custom.py renames its output away from the generic
+# firmware.bin PlatformIO would normally produce -- PROGNAME embeds the app version plus a
+# git short-hash (e.g. firmware-m5stack-cardputer-adv-dualmesh-2.8.0.7239fe8.bin), and that
+# suffix changes on every meshtastic/firmware commit, so it can't be hardcoded. Exclude the
+# *.factory.bin also produced there (Meshtastic's own self-merged image at ITS standalone-
+# board offsets, wrong for this project's shared partition table) -- we want the plain,
+# unmerged app image only.
+MESHTASTIC_BIN=""
+for f in "$MESHTASTIC_BUILD"/firmware-*.bin; do
+  case "$f" in
+    *.factory.bin) continue ;;
+  esac
+  MESHTASTIC_BIN="$f"
+done
+if [ -z "$MESHTASTIC_BIN" ] || [ ! -f "$MESHTASTIC_BIN" ]; then
+  echo "ERROR: could not find Meshtastic's output binary under $MESHTASTIC_BUILD" >&2
+  echo "       (looked for firmware-*.bin, excluding *.factory.bin). Contents:" >&2
+  ls -la "$MESHTASTIC_BUILD" >&2 || true
+  exit 1
+fi
+log "Found Meshtastic app image: $MESHTASTIC_BIN"
+
 log "Building MeshCore (env $MESHCORE_ENV)..."
 ( cd "$MESHCORE_DIR" && python3 -m platformio run -e "$MESHCORE_ENV" )
 MESHCORE_BUILD="$MESHCORE_DIR/.pio/build/$MESHCORE_ENV"
 
-check_size "$LAUNCHER_BUILD/firmware.bin"   "$SIZE_FACTORY" "launcher"
-check_size "$MESHTASTIC_BUILD/firmware.bin" "$SIZE_OTA0"    "meshtastic"
-check_size "$MESHCORE_BUILD/firmware.bin"   "$SIZE_OTA1"    "meshcore"
+check_size "$LAUNCHER_BUILD/firmware.bin" "$SIZE_FACTORY" "launcher"
+check_size "$MESHTASTIC_BIN"              "$SIZE_OTA0"    "meshtastic"
+check_size "$MESHCORE_BUILD/firmware.bin" "$SIZE_OTA1"    "meshcore"
 
 PORT_ARGS=()
 if [ -n "$SERIAL_PORT" ]; then
@@ -96,7 +118,7 @@ python3 -m esptool --chip esp32s3 "${PORT_ARGS[@]}" -b 921600 \
   "$OFF_BOOTLOADER"    "$LAUNCHER_BUILD/bootloader.bin" \
   "$OFF_PARTTABLE"     "$LAUNCHER_BUILD/partitions.bin" \
   "$OFF_FACTORY"       "$LAUNCHER_BUILD/firmware.bin" \
-  "$OFF_OTA0"          "$MESHTASTIC_BUILD/firmware.bin" \
+  "$OFF_OTA0"          "$MESHTASTIC_BIN" \
   "$OFF_OTA1"          "$MESHCORE_BUILD/firmware.bin"
 
 log "Done. otadata was erased, so the device boots to the launcher first no matter what it"
