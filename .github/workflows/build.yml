@@ -1,4 +1,4 @@
-name: Build DualMesh firmware
+﻿name: Build DualMesh firmware
 
 # Produces real, compiled M5Burner-ready .bin files for the Cardputer ADV DualMesh
 # launcher + Meshtastic + MeshCore build, using GitHub's own runners (full, unrestricted
@@ -90,6 +90,34 @@ jobs:
       - name: Build Meshtastic (ota_0 slot)
         run: cd meshtastic && pio run -e m5stack-cardputer-adv-dualmesh
 
+      - name: Locate Meshtastic's real output binary
+        # Meshtastic's own platformio-custom.py renames its output away from the generic
+        # firmware.bin PlatformIO would normally produce -- PROGNAME embeds the app version
+        # plus a git short-hash (e.g. firmware-m5stack-cardputer-adv-dualmesh-2.8.0.7239fe8.bin),
+        # and that suffix changes on every meshtastic/firmware commit, so it can never be
+        # hardcoded. The same build dir also contains a *.factory.bin (Meshtastic's own
+        # self-merged bootloader+partitions+boot_app0+app image at ITS OWN standalone-board
+        # offsets, 0x10000 -- wrong for this project's shared DualMesh table, which puts the
+        # Meshtastic app at 0x110000) and littlefs-*.bin -- both must be excluded, we want only
+        # the plain, unmerged app image (part_name: 'app0').
+        run: |
+          set -euo pipefail
+          MT_BUILD="meshtastic/.pio/build/m5stack-cardputer-adv-dualmesh"
+          MT_BIN=""
+          for f in "$MT_BUILD"/firmware-*.bin; do
+            case "$f" in
+              *.factory.bin) continue ;;
+            esac
+            MT_BIN="$f"
+          done
+          if [ -z "$MT_BIN" ] || [ ! -f "$MT_BIN" ]; then
+            echo "::error::Could not find Meshtastic's output binary under $MT_BUILD (looked for firmware-*.bin, excluding *.factory.bin). Contents:"
+            ls -la "$MT_BUILD" || true
+            exit 1
+          fi
+          echo "Found Meshtastic app image: $MT_BIN"
+          echo "MT_BIN=$MT_BIN" >> "$GITHUB_ENV"
+
       - name: Build MeshCore (ota_1 slot)
         run: cd meshcore && pio run -e cardputer_adv_companion_radio_ble
 
@@ -99,13 +127,13 @@ jobs:
           check() {
             sz=$(stat -c%s "$1")
             if [ "$sz" -gt "$2" ]; then
-              echo "::error::$3 firmware.bin is $sz bytes, exceeds its $2-byte partition (see partitions_dualmesh.csv)"
+              echo "::error::$3 image ($1) is $sz bytes, exceeds its $2-byte partition (see partitions_dualmesh.csv)"
               exit 1
             fi
-            echo "$3 firmware.bin: $sz / $2 bytes OK"
+            echo "$3 image ($1): $sz / $2 bytes OK"
           }
           check "dualmesh/launcher/.pio/build/cardputer_adv_launcher/firmware.bin"  $((0x100000)) launcher
-          check "meshtastic/.pio/build/m5stack-cardputer-adv-dualmesh/firmware.bin" $((0x3A0000)) meshtastic
+          check "$MT_BIN" $((0x3A0000)) meshtastic
           check "meshcore/.pio/build/cardputer_adv_companion_radio_ble/firmware.bin" $((0x200000)) meshcore
 
       - name: Merge into one M5Burner-ready image
@@ -113,7 +141,6 @@ jobs:
           set -euo pipefail
           mkdir -p out
           LAUNCHER=dualmesh/launcher/.pio/build/cardputer_adv_launcher
-          MT_BUILD=meshtastic/.pio/build/m5stack-cardputer-adv-dualmesh
           MC_BUILD=meshcore/.pio/build/cardputer_adv_companion_radio_ble
 
           # Single flat image spanning bootloader through the end of the ota_1 (MeshCore) app
@@ -127,7 +154,7 @@ jobs:
             0x0      "$LAUNCHER/bootloader.bin" \
             0x8000   "$LAUNCHER/partitions.bin" \
             0x10000  "$LAUNCHER/firmware.bin" \
-            0x110000 "$MT_BUILD/firmware.bin" \
+            0x110000 "$MT_BIN" \
             0x5B0000 "$MC_BUILD/firmware.bin"
 
           # Also keep the individual images, for anyone who'd rather flash slots one at a time
@@ -135,7 +162,7 @@ jobs:
           cp "$LAUNCHER/bootloader.bin"  out/bootloader.bin
           cp "$LAUNCHER/partitions.bin"  out/partitions.bin
           cp "$LAUNCHER/firmware.bin"    out/launcher-firmware.bin
-          cp "$MT_BUILD/firmware.bin"    out/meshtastic-firmware.bin
+          cp "$MT_BIN"                   out/meshtastic-firmware.bin
           cp "$MC_BUILD/firmware.bin"    out/meshcore-firmware.bin
 
           ls -la out/
