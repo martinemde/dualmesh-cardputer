@@ -1,0 +1,28 @@
+From: DualMesh overlay
+Subject: [PATCH] companion_radio: mount SPIFFS from the "mc_data" partition label
+
+../partitions_dualmesh.csv gives Meshtastic's data partition the literal
+label "spiffs" (required — stock Meshtastic code mounts by that exact
+label with no override available at this call site) and gives MeshCore's
+equivalent data partition the distinct label "mc_data" (ESP-IDF partition
+tables require unique names, so both sides can't be called "spiffs").
+Arduino-ESP32's SPIFFS.begin() takes the partition label as an optional
+4th argument (default "spiffs") — this patch just supplies ours instead
+of accepting that default, so this exact same global `SPIFFS` object (and
+everything downstream of it, e.g. `DataStore store(SPIFFS, rtc_clock);`
+declared earlier in this file) ends up backed by the correct partition.
+
+Verified against ripplebiz/MeshCore @ main (HEAD 0679dbe as of 2026-08-30),
+examples/companion_radio/main.cpp, lines 173-175.
+---
+--- a/examples/companion_radio/main.cpp
++++ b/examples/companion_radio/main.cpp
+@@ -172,6 +172,7 @@
+   );
+ #elif defined(ESP32)
+-  SPIFFS.begin(true);
++  SPIFFS.begin(true, "/spiffs", 10, "mc_data"); // DualMesh: use the "mc_data" partition,
++                                                  // not "spiffs" (that one's Meshtastic's)
+   store.begin();
+   the_mesh.begin(
+     #ifdef DISPLAY_CLASS

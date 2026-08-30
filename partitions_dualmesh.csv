@@ -1,0 +1,26 @@
+# Cardputer ADV "DualMesh" partition table — 8 MB flash (ESP32-S3FN8)
+#
+# Layout:
+#   bootloader   0x000000 - 0x009000   (2nd stage bootloader + partition table, not listed here)
+#   factory      launcher / boot-picker app        1.00 MB
+#   ota_0        Meshtastic app slot                3.625 MB
+#   spiffs       Meshtastic LittleFS/SPIFFS data    1.00 MB   (label MUST be "spiffs" — stock
+#                                                              Meshtastic code mounts by that label)
+#   ota_1        MeshCore app slot                  2.00 MB
+#   mc_data      MeshCore identity/config storage    256 KB   (distinct label — see meshcore-cardputer/src/main.cpp)
+#   coredump     crash dumps for debugging            64 KB
+#
+# Total = 0x800000 (8,388,608 bytes) exactly. No self-OTA: the bootloader/otadata slot-switching
+# is owned entirely by the launcher (and the return-to-launcher hook in each guest firmware) — do
+# NOT trigger Meshtastic's or MeshCore's own "check for firmware update" features on this build,
+# they would write into the wrong slot and corrupt this layout. See README.md.
+#
+# Name,     Type, SubType,  Offset,    Size,      Flags
+nvs,        data, nvs,      0x9000,    0x5000,
+otadata,    data, ota,      0xE000,    0x2000,
+factory,    app,  factory,  0x10000,   0x100000,
+ota_0,      app,  ota_0,    0x110000,  0x3A0000,
+spiffs,     data, spiffs,   0x4B0000,  0x100000,
+ota_1,      app,  ota_1,    0x5B0000,  0x200000,
+mc_data,    data, spiffs,   0x7B0000,  0x40000,
+coredump,   data, coredump, 0x7F0000,  0x10000,

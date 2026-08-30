@@ -1,0 +1,43 @@
+From: DualMesh overlay
+Subject: [PATCH] Add DualMesh return-to-launcher hook to loop()
+
+Same hook as the Meshtastic side (see ../meshtastic-overlay/), applied to
+MeshCore's companion_radio example instead.
+
+NOTE: earlier drafts of this patch relied on a global compiler "-include
+dualmesh_ota.h" build flag instead of an explicit #include here, so nothing
+needed to change in this file's #include list. That was reverted (and this
+patch now adds the include explicitly) because a project-wide -include gets
+force-injected into every translation unit PlatformIO compiles for this
+target, including plain-C and framework-internal C++ files that don't have
+Arduino.h on their include path — dualmesh_ota.h itself includes
+<Arduino.h> and uses C++ features (namespaces), so forcing it into a
+non-Arduino translation unit fails to compile. Doing the include here,
+in one file that already includes <Arduino.h> on its own first line, avoids
+that entirely. variants/cardputer_adv/platformio.ini still adds `-I
+variants/cardputer_adv` so this quoted include resolves.
+
+Verified against ripplebiz/MeshCore @ main (HEAD 0679dbe as of 2026-08-30),
+examples/companion_radio/main.cpp: line 1 is `#include <Arduino.h>` and
+loop() starts at line 247 with `the_mesh.loop();` as its first statement.
+If either hunk fails to apply because upstream has moved on: add
+`#include "dualmesh_ota.h"` right after the existing `#include <Arduino.h>`
+near the top of the file, and add the one `dualmesh::ReturnHook::poll();`
+call as the first line of `void loop() {`.
+---
+--- a/examples/companion_radio/main.cpp
++++ b/examples/companion_radio/main.cpp
+@@ -1,4 +1,5 @@
+ #include <Arduino.h>   // needed for PlatformIO
++#include "dualmesh_ota.h" // DualMesh: return-to-launcher hook
+ #include <Mesh.h>
+ #include "MyMesh.h"
+
+@@ -245,6 +246,7 @@
+ }
+
+ void loop() {
++  dualmesh::ReturnHook::poll(); // DualMesh: hold BOOT 3s to return to the app picker
+   the_mesh.loop();
+   interface_manager.loop();
+   sensors.loop();

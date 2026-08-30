@@ -1,0 +1,44 @@
+From: DualMesh overlay
+Subject: [PATCH] Add DualMesh return-to-launcher hook to loop()
+
+Two small additions to src/main.cpp:
+  1. #include "dualmesh_ota.h" near the top, alongside the file's other
+     local includes.
+  2. dualmesh::ReturnHook::poll() as the first line of loop() — on every
+     pass, this checks whether BOOT (GPIO0) has been held for 3s and, if
+     so, jumps back to the launcher's app picker.
+
+Earlier revisions of this overlay force-included dualmesh_ota.h globally
+via a compiler "-include" build flag instead of a real #include here. That
+broke the build: a global -include is applied even to plain-C and
+ESP-IDF-internal C++ translation units that don't have Arduino.h on their
+include path (e.g. esp-idf's cxx/cxx_exception_stubs.cpp), so the header's
+Arduino.h include failed there. An explicit #include in this one
+Arduino-framework file avoids that entirely. (dualmesh_ota.h itself is
+still guarded with `#ifdef __cplusplus` as a second line of defense, in
+case anything ever force-includes it again.)
+
+Verified against meshtastic/firmware @ develop, src/main.cpp: the local
+#include block starting around line 20 (after "power/PowerHAL.h"), and the
+loop() function starting at line 1377. If either hunk fails to apply
+because upstream has moved on, add the two lines by hand in the same
+spots — that's all this patch does.
+---
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -20,6 +20,7 @@
+ #include "airtime.h"
+ #include "buzz.h"
+ #include "power/PowerHAL.h"
++#include "dualmesh_ota.h" // DualMesh: return-to-launcher hook
+
+ #include "FSCommon.h"
+ #include "Power.h"
+@@ -1376,6 +1377,7 @@ void scannerToSensorsMap(const std::unique_ptr<ScanI2CTwoWire> &i2cScanner, Scan
+ #ifndef PIO_UNIT_TESTING
+ void loop()
+ {
++    dualmesh::ReturnHook::poll(); // DualMesh: hold BOOT 3s to return to the app picker
+     runASAP = false;
+
+     // The single writer of the monotonic wrap carry; every other caller only reads it.

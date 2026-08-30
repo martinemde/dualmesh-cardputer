@@ -1,0 +1,69 @@
+From: DualMesh overlay
+Subject: [PATCH] ST7789LCDDisplay: support M5_CARDPUTER_ADV panel + custom SPI pins
+
+MeshCore's ST7789LCDDisplay driver (src/helpers/ui/ST7789LCDDisplay.{h,cpp})
+special-cases LILYGO_TDECK / HELTEC_LORA_V4_TFT / HELTEC_V4_R8_TFT to (a) use
+a dedicated SPIClass instance wired to that board's own TFT pins instead of
+the default global `SPI`, since those boards don't wire their display onto
+the chip's default SPI pins, and (b) hardcodes a 240x320 physical panel size.
+
+Cardputer ADV is in the same situation: its ST7789 is 240x135 on its own
+SPI bus, wired to non-default pins (see ../common/board_pins_cardputer_adv.h).
+This patch:
+  1. adds M5_CARDPUTER_ADV to the existing dedicated-SPI branch (no new
+     branch, just extending the existing list of boards that need one), and
+  2. makes DISPLAY_WIDTH/DISPLAY_HEIGHT overridable via build flags instead
+     of hardcoded, defaulting to the existing 240x320 for every other board
+     so this is a no-op for them.
+
+meshcore-cardputer/platformio.ini sets -D M5_CARDPUTER_ADV=1
+-D DISPLAY_WIDTH=240 -D DISPLAY_HEIGHT=135 to opt in.
+
+Verified against ripplebiz/MeshCore @ main.
+---
+--- a/src/helpers/ui/ST7789LCDDisplay.h
++++ b/src/helpers/ui/ST7789LCDDisplay.h
+@@ -9,7 +9,7 @@
+ #include <helpers/RefCountedDigitalPin.h>
+
+ class ST7789LCDDisplay : public DisplayDriver {
+-  #if defined(LILYGO_TDECK) || defined(HELTEC_LORA_V4_TFT) || defined(HELTEC_V4_R8_TFT)
++  #if defined(LILYGO_TDECK) || defined(HELTEC_LORA_V4_TFT) || defined(HELTEC_V4_R8_TFT) || defined(M5_CARDPUTER_ADV)
+     SPIClass displaySPI;
+   #endif
+   Adafruit_ST7789 display;
+@@ -25,7 +25,7 @@
+   {
+     _isOn = false;
+   }
+-#elif defined(LILYGO_TDECK) || defined(HELTEC_LORA_V4_TFT) || defined(HELTEC_V4_R8_TFT)
++#elif defined(LILYGO_TDECK) || defined(HELTEC_LORA_V4_TFT) || defined(HELTEC_V4_R8_TFT) || defined(M5_CARDPUTER_ADV)
+   ST7789LCDDisplay(RefCountedDigitalPin* peripher_power=NULL) : DisplayDriver(128, 64),
+       displaySPI(HSPI),
+       display(&displaySPI, PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST),
+--- a/src/helpers/ui/ST7789LCDDisplay.cpp
++++ b/src/helpers/ui/ST7789LCDDisplay.cpp
+@@ -13,8 +13,12 @@
+   #define DISPLAY_SCALE_Y 3.75f // 240 / 64
+ #endif
+
+-#define DISPLAY_WIDTH 240
+-#define DISPLAY_HEIGHT 320
++#ifndef DISPLAY_WIDTH
++  #define DISPLAY_WIDTH 240
++#endif
++#ifndef DISPLAY_HEIGHT
++  #define DISPLAY_HEIGHT 320
++#endif
+
+ bool ST7789LCDDisplay::i2c_probe(TwoWire& wire, uint8_t addr) {
+   return true;
+@@ -37,7 +41,7 @@
+     }
+
+     // Im not sure if this is just a t-deck problem or not, if your display is slow try this.
+-    #if defined(LILYGO_TDECK) || defined(HELTEC_LORA_V4_TFT) || defined(HELTEC_V4_R8_TFT)
++    #if defined(LILYGO_TDECK) || defined(HELTEC_LORA_V4_TFT) || defined(HELTEC_V4_R8_TFT) || defined(M5_CARDPUTER_ADV)
+       displaySPI.begin(PIN_TFT_SCL, PIN_TFT_MISO, PIN_TFT_SDA, PIN_TFT_CS);
+     #endif
+
