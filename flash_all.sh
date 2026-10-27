@@ -10,9 +10,9 @@
 #     one PlatformIO already installed via `python3 -m esptool`)
 #   - Your meshtastic checkout already has meshtastic-overlay/ installed into it (env
 #     m5stack-cardputer-adv-dualmesh exists) and the return-to-launcher patch applied.
-#   - Your meshcore checkout already has meshcore-cardputer/ installed into it as
-#     variants/cardputer_adv/ (envs cardputer_adv_companion_radio_ble / _usb exist) and all
-#     three patches applied.
+#   - Your meshcore checkout is the pinned martinemde/MeshCore cardputer-adv source
+#     with meshcore-cardputer/0004-cardputer-keyboard-dualmesh.patch applied and the
+#     shared OTA header and partition table copied into variants/m5stack_cardputer_adv/.
 #
 # This script does NOT rely on `pio run -t upload` for the app slots (PlatformIO's automatic
 # upload-offset detection isn't reliable when a partition table defines three app partitions —
@@ -30,7 +30,7 @@ MESHCORE_DIR="${2:?usage: $0 <meshtastic-checkout> <meshcore-checkout> [serial-p
 SERIAL_PORT="${3:-}"
 
 MESHTASTIC_ENV="m5stack-cardputer-adv-dualmesh"
-MESHCORE_ENV="cardputer_adv_companion_radio_ble"   # switch to cardputer_adv_companion_radio_usb if preferred
+MESHCORE_ENV="M5Stack_Cardputer_ADV_companion_radio_ble"
 
 # ---- partition offsets, must match partitions_dualmesh.csv exactly ----
 OFF_BOOTLOADER=0x0
@@ -115,7 +115,7 @@ log "Flashing bootloader + partition table + all three app slots..."
 python3 -m esptool --chip esp32s3 "${PORT_ARGS[@]}" -b 921600 \
   --before default_reset --after hard_reset write_flash -z \
   --flash_mode qio --flash_freq 80m --flash_size 8MB \
-  "$OFF_BOOTLOADER"    "$LAUNCHER_BUILD/bootloader.bin" \
+  "$OFF_BOOTLOADER"    "$MESHCORE_BUILD/bootloader.bin" \
   "$OFF_PARTTABLE"     "$LAUNCHER_BUILD/partitions.bin" \
   "$OFF_FACTORY"       "$LAUNCHER_BUILD/firmware.bin" \
   "$OFF_OTA0"          "$MESHTASTIC_BIN" \

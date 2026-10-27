@@ -5,6 +5,18 @@ and full protocol fidelity, chosen from an on-device menu. It is **not** the two
 at the same instant on the same radio — see "Why not truly concurrent?" below for why that
 option was ruled out, and what was built instead.
 
+## Current fork status
+
+MeshCore now comes from the pinned keyboard-enabled fork described below, with
+DualMesh integration applied separately. That integration is checked against the
+local source used for the flashed MeshCore image. A fresh complete CI build is
+still required; the older verification notes below describe the original build.
+
+For an existing device, update only the intended raw app slot after a full backup
+and read-back verification. The full image and `flash_all.sh` are **not** a
+settings-preserving update path. Do not use PlatformIO upload or guest factory
+bundles: their automatic offsets do not match this layout.
+
 ## How it works
 
 The ESP32-S3's flash is split into three app slots by `partitions_dualmesh.csv`: `factory`
@@ -68,16 +80,10 @@ hardware's ceiling, inside whatever your region actually allows," not "ignore th
 Meshtastic itself was changed; the overlay only points its build at the shared partition table
 and adds the one-line return-to-launcher hook.
 
-**MeshCore** (`ota_1`) is built in **Companion Radio** mode (BLE by default, USB-serial as an
-alternate env), not on-device chat. This wasn't a shortcut: MeshCore's own closest hardware
-match to the Cardputer — the LilyGO T-Deck, the only other keyboard+color-screen+SX1262 board it
-supports — *also* only ships Companion Radio, repeater, and modem builds, not on-device chat,
-even though it has a keyboard. There's no documented on-device chat UI contract in MeshCore to
-build against safely for either board. Companion Radio is also MeshCore's most complete, most
-capable mode — full protocol feature set, official iOS/Android/web app pairing over BLE or USB —
-so it's the right call on its own merits, not just the safe one. The Cardputer's screen shows
-MeshCore's status UI (battery, radio state, contacts) via its existing ST7789 driver; you compose
-messages in the paired app, same as any other MeshCore companion node.
+**MeshCore** (`ota_1`) uses our keyboard-enabled Cardputer branch. It supports
+BLE Companion Radio **and on-device keyboard message composition**. Cardputer
+hardware/UI fixes live in the MeshCore fork; only the integration changes live
+in this repository. See the pinned source and manual build steps below.
 
 ## Building — the easy way (recommended): GitHub Actions
 
@@ -142,20 +148,31 @@ cd "$MT" && git apply /path/to/dualmesh/meshtastic-overlay/0001-add-return-to-la
 pio run -e m5stack-cardputer-adv-dualmesh
 ```
 
-**3. MeshCore overlay:**
+**3. Keyboard-enabled MeshCore:**
+
+The hardware and keyboard code lives in
+[`martinemde/MeshCore`, branch `cardputer-adv`](https://github.com/martinemde/MeshCore/tree/cardputer-adv).
+DualMesh-specific changes stay here: partition selection, separate storage,
+return-to-launcher hooks, BOOT-hold handling, and disabling self-OTA.
+The build pins commit `ecc79b6b6fdd2cde7860cbb2518010e170d04904` for repeatable source selection.
+Do **not** apply the older `0001`–`0003` MeshCore patches to this branch.
+
 ```
-MC=/path/to/your/MeshCore
-mkdir -p "$MC/variants/cardputer_adv"
-cp meshcore-cardputer/variants/cardputer_adv/*.{h,cpp} "$MC/variants/cardputer_adv/"
-cp meshcore-cardputer/platformio.ini "$MC/variants/cardputer_adv/platformio.ini"
-cp common/dualmesh_ota.h common/board_pins_cardputer_adv.h partitions_dualmesh.csv \
-   "$MC/variants/cardputer_adv/"
-cd "$MC"
-git apply /path/to/dualmesh/meshcore-cardputer/0001-add-return-to-launcher-hook.patch
-git apply /path/to/dualmesh/meshcore-cardputer/0002-st7789lcddisplay-cardputer-adv-panel.patch
-git apply /path/to/dualmesh/meshcore-cardputer/0003-spiffs-mc-data-partition-label.patch
-pio run -e cardputer_adv_companion_radio_ble
+git clone https://github.com/martinemde/MeshCore.git meshcore
+MC="$PWD/meshcore"
+DM=/path/to/dualmesh-cardputer
+git -C "$MC" checkout ecc79b6b6fdd2cde7860cbb2518010e170d04904
+cp "$DM/common/dualmesh_ota.h" "$DM/partitions_dualmesh.csv" \
+   "$MC/variants/m5stack_cardputer_adv/"
+git -C "$MC" apply "$DM/meshcore-cardputer/0004-cardputer-keyboard-dualmesh.patch"
+cd "$MC" && pio run -e M5Stack_Cardputer_ADV_companion_radio_ble
 ```
+
+This integration targets the **Cardputer BLE companion** environment only, not
+the fork's repeater, room-server, or sensor builds. It retains BLE support and
+adds native keyboard compose/send (press **M** from home, choose a contact, type,
+then **Enter**). The hardware branch retains the local US/915 MHz default;
+select settings that match your region and local mesh.
 
 **4. Flash everything at once:**
 ```
@@ -202,10 +219,9 @@ day to day.
   would write into the *other* project's slot here, corrupting this partition layout. Reflash
   with `flash_all.sh` instead when you want to update either side.
 
-## Extending this
+## Updating MeshCore
 
-The most valuable next step, if you want it, is a real on-device MeshCore chat UI (instead of
-Companion Radio) — genuinely new work, not something to shortcut, since it means implementing
-against MeshCore's `UIScreen`/on-device-UI pattern from scratch with no existing keyboard-driven
-reference to build from. Happy to take a run at that as a follow-up if you want the Cardputer's
-own keyboard driving MeshCore chat directly instead of pairing with a phone.
+Keep Cardputer hardware and keyboard improvements in the MeshCore fork. Keep
+DualMesh slot/storage/boot changes in this repository's integration patch.
+To update, review a new MeshCore revision, verify the patch and build, then update
+the pinned SHA in both the workflow and the manual instructions.

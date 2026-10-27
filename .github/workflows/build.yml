@@ -35,10 +35,12 @@ jobs:
           path: meshtastic
           submodules: recursive
 
-      - name: Check out MeshCore firmware (upstream)
+      - name: Check out keyboard-enabled MeshCore firmware
         uses: actions/checkout@v4
         with:
-          repository: ripplebiz/MeshCore
+          repository: martinemde/MeshCore
+          # cardputer-adv: pin the reviewed source instead of following branch changes.
+          ref: ecc79b6b6fdd2cde7860cbb2518010e170d04904
           path: meshcore
           submodules: recursive
 
@@ -73,23 +75,16 @@ jobs:
           cd "$MT"
           git apply "$DM/meshtastic-overlay/0001-add-return-to-launcher-hook.patch"
 
-      - name: Install the DualMesh overlay into the MeshCore checkout
+      - name: Install DualMesh integration into keyboard-enabled MeshCore
         run: |
           set -euo pipefail
           MC="$GITHUB_WORKSPACE/meshcore"
           DM="$GITHUB_WORKSPACE/dualmesh"
-          DEST="$MC/variants/cardputer_adv"
-          mkdir -p "$DEST"
-          cp "$DM"/meshcore-cardputer/variants/cardputer_adv/*.h "$DEST/"
-          cp "$DM"/meshcore-cardputer/variants/cardputer_adv/*.cpp "$DEST/"
-          cp "$DM/meshcore-cardputer/platformio.ini" "$DEST/platformio.ini"
+          DEST="$MC/variants/m5stack_cardputer_adv"
           cp "$DM/common/dualmesh_ota.h" "$DEST/"
-          cp "$DM/common/board_pins_cardputer_adv.h" "$DEST/"
           cp "$DM/partitions_dualmesh.csv" "$DEST/"
           cd "$MC"
-          git apply "$DM/meshcore-cardputer/0001-add-return-to-launcher-hook.patch"
-          git apply "$DM/meshcore-cardputer/0002-st7789lcddisplay-cardputer-adv-panel.patch"
-          git apply "$DM/meshcore-cardputer/0003-spiffs-mc-data-partition-label.patch"
+          git apply "$DM/meshcore-cardputer/0004-cardputer-keyboard-dualmesh.patch"
 
       - name: Build launcher (factory slot)
         run: cd dualmesh/launcher && pio run -e cardputer_adv_launcher
@@ -126,7 +121,7 @@ jobs:
           echo "MT_BIN=$MT_BIN" >> "$GITHUB_ENV"
 
       - name: Build MeshCore (ota_1 slot)
-        run: cd meshcore && pio run -e cardputer_adv_companion_radio_ble
+        run: cd meshcore && pio run -e M5Stack_Cardputer_ADV_companion_radio_ble
 
       - name: Verify each image fits its partition
         run: |
@@ -141,15 +136,16 @@ jobs:
           }
           check "dualmesh/launcher/.pio/build/cardputer_adv_launcher/firmware.bin"  $((0x100000)) launcher
           check "$MT_BIN" $((0x3A0000)) meshtastic
-          check "meshcore/.pio/build/cardputer_adv_companion_radio_ble/firmware.bin" $((0x200000)) meshcore
+          check "meshcore/.pio/build/M5Stack_Cardputer_ADV_companion_radio_ble/firmware.bin" $((0x200000)) meshcore
 
       - name: Merge into one M5Burner-ready image
         run: |
           set -euo pipefail
           mkdir -p out
           LAUNCHER=dualmesh/launcher/.pio/build/cardputer_adv_launcher
-          MC_BUILD=meshcore/.pio/build/cardputer_adv_companion_radio_ble
+          MC_BUILD=meshcore/.pio/build/M5Stack_Cardputer_ADV_companion_radio_ble
 
+          # Use MeshCore's older IDF4 bootloader for compatibility with all three apps.
           # Single flat image spanning bootloader through the end of the ota_1 (MeshCore) app
           # slot, at the exact offsets in partitions_dualmesh.csv. The spiffs/mc_data/coredump
           # partitions past that point are intentionally left out — LittleFS/SPIFFS format
@@ -158,7 +154,7 @@ jobs:
           python3 -m esptool --chip esp32s3 merge_bin \
             -o out/dualmesh-cardputer-adv-full.bin \
             --flash_mode qio --flash_freq 80m --flash_size 8MB \
-            0x0      "$LAUNCHER/bootloader.bin" \
+            0x0      "$MC_BUILD/bootloader.bin" \
             0x8000   "$LAUNCHER/partitions.bin" \
             0x10000  "$LAUNCHER/firmware.bin" \
             0x110000 "$MT_BIN" \
@@ -166,7 +162,7 @@ jobs:
 
           # Also keep the individual images, for anyone who'd rather flash slots one at a time
           # with esptool (see flash_all.sh) instead of M5Burner's single-file flow.
-          cp "$LAUNCHER/bootloader.bin"  out/bootloader.bin
+          cp "$MC_BUILD/bootloader.bin"  out/bootloader.bin
           cp "$LAUNCHER/partitions.bin"  out/partitions.bin
           cp "$LAUNCHER/firmware.bin"    out/launcher-firmware.bin
           cp "$MT_BIN"                   out/meshtastic-firmware.bin
