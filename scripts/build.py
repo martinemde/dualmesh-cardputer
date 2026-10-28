@@ -154,8 +154,9 @@ def build(work, output, metadata):
     pio_run(launcher, LAUNCHER_ENV, pio_environment(work, "launcher"))
     mt_env = pio_environment(work, "meshtastic")
     fix_mt_scons(mt, mt_env)
+    # The pinned Meshtastic default target builds both the app and LittleFS.
+    # A second buildfs-only invocation cleans away the app binary on this platform.
     pio_run(mt, MT_ENV, mt_env)
-    pio_run(mt, MT_ENV, mt_env, "buildfs")
     pio_run(mc, MC_ENV, pio_environment(work, "meshcore"))
 
     launcher_images = launcher / ".pio/build" / LAUNCHER_ENV
